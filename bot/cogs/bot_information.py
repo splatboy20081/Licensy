@@ -1,0 +1,237 @@
+import os
+import time
+import psutil
+import logging
+
+import discord
+from discord.ext import commands, tasks
+
+from bot import Licensy
+from bot.cogs.utils.embed_handler import info
+from bot.cogs.utils.licence_helper import get_current_time
+from bot.cogs.utils.activities import ActivityCycle, DynamicActivity
+from bot.cogs.utils.misc import construct_load_bar_string, construct_embed, time_ago, embed_space
+
+
+logger = logging.getLogger(__name__)
+
+
+class BotInformation(commands.Cog):
+    def __init__(self, bot: Licensy):
+        self.bot = bot
+        self.process = psutil.Process(os.getpid())
+        self.activities = ActivityCycle()
+        self.add_activities()
+        self.activity_loop.start()
+
+    def cog_unload(self):
+        self.activity_loop.cancel()
+
+    def add_activities(self) -> None:
+        """Add activities to cycle."""
+        self.activities.add(
+            DynamicActivity(
+                type=discord.ActivityType.watching,
+                name_callable=lambda: "{} guilds".format(len(self.bot.guilds))
+            )
+        )
+        self.activities.add(
+            DynamicActivity(
+                type=discord.ActivityType.watching,
+                name_callable=self.bot.db_client.get_total_stored_licenses,
+                name_suffix=" licenses"
+            )
+        )
+        self.activities.add(discord.Game(name="roles!"))
+
+    @tasks.loop(seconds=10)
+    async def activity_loop(self):
+        if not self.bot.update_in_progress:
+            await self.bot.change_presence(activity=await self.activities.next())
+
+    @activity_loop.before_loop
+    async def before_activity_loop(self):
+        await self.bot.wait_until_ready()
+        logger.info("Activity loop started!")
+
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        """
+        If bot is mentioned in message (both in guild and DM) then show prefix that is used there.
+
+        Messages longer than 20 chars are not considered bot pings and we will skip those.
+        """
+        if self.bot.user in message.mentions and not message.author.bot and len(message.content) < 20:
+            prefix = await self.bot.get_guild_prefix(message.guild)
+
+            if message.guild is None:
+                await message.channel.send(embed=info(f"My prefix here is **{prefix}**"))
+            else:
+                await message.channel.send(embed=info(f"My prefix in this guild is **{prefix}**", message.guild.me))
+
+    @commands.command()
+    async def ping(self, ctx):
+        """
+        Show bot ping.
+
+        Output
+        -------
+        Message with 2 numeric values, first value is REST API latency and second one is Discord gateway latency.
+        """
+        before = time.monotonic()
+        message = await ctx.send(embed=info("Pong", ctx.me))
+        ping = (time.monotonic() - before) * 1000
+
+        results = (
+            f":ping_pong:   |   {int(ping)}ms\n"
+            f":timer:   |   {self.bot.latency * 1000:.0f}ms"
+        )
+
+        await message.edit(embed=info(results, ctx.me, title="Results:"))
+
+    @commands.command()
+    async def invite(self, ctx):
+        """
+        Shows bot invite link.
+
+        Output
+        -------
+        Discord invite link that can be used to invite the bot to your guild.
+        """
+        description = f"Use this **[invite link]({self.get_bot_invite_link()})** to invite me."
+        await ctx.send(embed=info(description, ctx.me, title="Invite me :)"))
+
+    @commands.command(aliases=["support"])
+    async def get_support(self, ctx):
+        """
+        Shows invite to the support server.
+
+        Output
+        -------
+        Link to Discord support server.
+        """
+        description = (
+            f"Join **[support server]({self.bot.config.SUPPORT_CHANNEL_INVITE})** "
+            f"for questions, suggestions and support."
+        )
+        await ctx.send(embed=info(description, ctx.me, title="Ask away!"))
+
+    @commands.command(aliases=["donate"])
+    async def give_support(self, ctx):
+        """
+        Support development.
+
+        Output
+        -------
+        Shows link for donations, link to bot listing voting and link to source code.
+        """
+        description = (
+            f"Donate on Patreon: [donate link]({self.bot.config.PATREON_LINK})\n"
+            f"Vote for the bot: [vote link]({self.bot.config.TOP_GG_VOTE_LINK})\n\n"
+            f"Take a look at the source code: {self.bot.config.SOURCE_CODE_LINK}\n"
+            f"Any improvements/suggestions are welcome. If you find it helpful feel free to star the repo ;)"
+        )
+        await ctx.send(embed=info(description, ctx.me, title="Support the development:"))
+
+    @commands.command(aliases=("stats", "status"))
+    @commands.cooldown(1, 10, commands.BucketType.guild)
+    async def about(self, ctx):
+        """
+        Show bot information (stats/links/etc).
+
+        """
+        avg_users = round(len(self.bot.users) / len(self.bot.guilds))
+
+        active_licenses = await self.bot.db_client.get_licensed_roles_total_count()
+        stored_licenses = await self.bot.db_client.get_stored_license_total_count()
+
+        bot_ram_usage = self.process.memory_full_info().rss / 1024 ** 2
+        bot_ram_usage = f"{bot_ram_usage:.2f} MB"
+        bot_ram_usage_field = construct_load_bar_string(self.process.memory_percent(), bot_ram_usage)
+
+        virtual_memory = psutil.virtual_memory()
+        server_ram_usage = f"{virtual_memory.used/1024/1024:.0f} MB"
+        server_ram_usage_field = construct_load_bar_string(virtual_memory.percent, server_ram_usage)
+
+        cpu_count = psutil.cpu_count()
+
+        bot_cpu_usage = self.process.cpu_percent()
+        if bot_cpu_usage > 100:
+            bot_cpu_usage = bot_cpu_usage / cpu_count
+        bot_cpu_usage_field = construct_load_bar_string(bot_cpu_usage)
+
+        server_cpu_usage = psutil.cpu_percent()
+        if server_cpu_usage > 100:
+            server_cpu_usage = server_cpu_usage / cpu_count
+        server_cpu_usage_field = construct_load_bar_string(server_cpu_usage)
+
+        io_counters = self.process.io_counters()
+        io_read_bytes = f"{io_counters.read_bytes/1024/1024:.3f}MB"
+        io_write_bytes = f"{io_counters.write_bytes/1024/1024:.3f}MB"
+
+        footer = (f"[Invite]({self.get_bot_invite_link()})"
+                  f" | [Donate]({self.bot.config.PATREON_LINK})"
+                  f" | [Support]({self.bot.config.SUPPORT_CHANNEL_INVITE})"
+                  f" | [Vote]({self.bot.config.TOP_GG_VOTE_LINK})"
+                  f" | [Source]({self.bot.config.SOURCE_CODE_LINK})")
+
+        # The weird numbers is just guessing number of spaces so the lines align
+        # Needed since embeds are not monospaced font
+        field_content = (f"**Bot RAM usage:**{embed_space*7}{bot_ram_usage_field}\n"
+                         f"**Server RAM usage:**{embed_space}{server_ram_usage_field}\n"
+                         f"**Bot CPU usage:**{embed_space*9}{bot_cpu_usage_field}\n"
+                         f"**Server CPU usage:**{embed_space*3}{server_cpu_usage_field}\n"
+                         f"**IO (r/w):** {io_read_bytes} / {io_write_bytes}\n"
+                         f"\n**Links:\n**" + footer)
+
+        fields = {"Last boot": self.last_boot(),
+                  "Developer": self.bot.owner_mention,
+                  "Library": "discord.py",
+                  "Servers": len(self.bot.guilds),
+                  "Average users:": f"{avg_users} users/server",
+                  "Total users": len(self.bot.users),
+                  "Commands": len(self.bot.commands),
+                  "Active licenses:": active_licenses,
+                  "Stored licenses:": stored_licenses,
+                  "Server info": field_content,
+                  }
+
+        embed = construct_embed(ctx.me, **fields)
+        await ctx.send(embed=embed)
+
+    @commands.command()
+    async def uptime(self, ctx):
+        """
+        Time since last boot.
+
+        Output
+        -------
+        Humanized string representing time since boot.
+        """
+        await ctx.send(embed=info(self.last_boot(), ctx.me, title="Booted:"))
+
+    def last_boot(self) -> str:
+        """
+        Get last boot time in humanized form.
+
+        Returns
+        -------
+        last boot time (str)
+            Boot time in humanized form aka description instead of numerals (eg. 2 hours ago, 1 week ago etc)
+        """
+        return time_ago(get_current_time() - self.bot.up_time_start_time)
+
+    def get_bot_invite_link(self) -> str:
+        """
+        Constructs bot invite link.
+
+        Returns
+        -------
+        bot invite url: str
+            Link that can be used for inviting bot to Discord guilds.
+        """
+        return discord.utils.oauth_url(self.bot.user.id, permissions=self.bot.config.BOT_PERMISSIONS)
+
+
+def setup(bot):
+    bot.add_cog(BotInformation(bot))
