@@ -1,4 +1,5 @@
-from typing import Iterable, Iterator, Any, Set, Callable, Union
+import inspect
+from typing import Iterable, Iterator, Any, Set, Callable, Union, Awaitable
 
 import discord
 
@@ -37,41 +38,52 @@ class HashableActivity(discord.Activity):
 
 class DynamicActivity(HashableActivity):
     """
-    Activity that is hashable and implements additional attribute that stores callable used for
-    generating activity name.
+    Activity that is hashable and implements additional attributes used for generating activity name.
     """
-    def __init__(self, name_callable: Callable[[], str], **kwargs):
+    def __init__(
+            self,
+            name_callable: Union[Callable[[], Awaitable[str]], Callable[[], str]],
+            *,
+            name_prefix: str = "",
+            name_suffix: str = "",
+            **kwargs
+    ):
         """
         Parameters
         ----------
-        name_callable: Callable[[], str]
+        name_callable: Union[Callable[[], Awaitable[str]], Callable[[], str]]
             Callable (eg. reference to function) that, when called, should return string representing freshly
-            generated activity name. Examples:
+            generated activity name. Can be a coroutine. Examples:
             DynamicActivity(lambda: "Some name")
-            DynamicActivity(some_function)
+            DynamicActivity(some_sync_function)
+            DynamicActivity(some_async_function)
+        name_prefix: str
+            Prefix to add to the generated name. Defaults to empty string.
+        name_suffix: str
+            Suffix to add to the generated name. Defaults to empty string.
         kwargs
             Any additional options to be passed to discord.Activity.
         """
+        if not callable(name_callable):
+            raise TypeError("name_callable has to be a Callable.")
+
         super().__init__(**kwargs)
         self._name_callable = name_callable
+        self._name_prefix = name_prefix
+        self._name_suffix = name_suffix
 
-    @property
-    def name_callable(self) -> Callable[[], str]:
+    async def update_name(self) -> None:
         """
-        Returns callable that, when called, will return string representing activity name.
+        Updates this activity name to the return value of name_callable.
 
-        Returns
-        -------
-        activity name: str
-            Represents newly generated activity name.
+        Strings the return value of name_callable just in case.
         """
-        return self._name_callable
+        if inspect.iscoroutinefunction(self._name_callable):
+            name = await self._name_callable()
+        else:
+            name = self._name_callable()
 
-    def update_name(self) -> None:
-        """
-        Updates this activity name to the return value of name_callable()
-        """
-        self.name = self.name_callable()
+        self.name = f"{self._name_prefix}{name}{self._name_suffix}"
 
 
 class ActivityCycle:
@@ -101,12 +113,14 @@ class ActivityCycle:
     ----------
     bot = # your Discord bot
 
+    # ...
+
     example_cycle = ActivityCycle()
 
-    example_cycle.add(
+    await example_cycle.add(
         DynamicActivity(
             type=discord.ActivityType.watching,
-            name_callable=lambda: "{} guilds".format(len(bot.guilds))
+            name_callable=lambda: f"{len(bot.guilds)} guilds"
         )
     )
 
@@ -114,7 +128,7 @@ class ActivityCycle:
         example_names = ("Subscribe!", "Follow!", "Join!")
         return random.choice(example_names)
 
-    example_cycle.add(
+    await example_cycle.add(
         DynamicActivity(
             type=discord.ActivityType.streaming,
             name_callable=stream_name_helper,
@@ -122,33 +136,46 @@ class ActivityCycle:
         )
     )
 
-    example_cycle.add(
+    async def get_some_number_from_api() -> int:
+        some_number = await some_function_that_fetches_number_from_some_api()
+        return some_number
+
+    await example_cycle.add(
+        DynamicActivity(
+            type=discord.ActivityType.watching,
+            name_callable=get_some_number_from_api,
+            name_prefix="Number ",
+            name_suffix=" from API"
+        )
+    )
+
+    await example_cycle.add(
         discord.Game(
             name="Coding but not dynamic"
         )
     )
 
     # Then either iterate over it
-    for activity in example_cycle:
-        await bot.change_presence(activity)
+    async for activity in example_cycle:
+        await bot.change_presence(activity=activity)
         await asyncio.sleep(300)
 
     # Or manually call next
     @tasks.loop(minutes=5.0)
     async def activity_loop():
-        await bot.change_presence(activity.next())
+        await bot.change_presence(activity=await activity.next())
     """
     def __init__(self):
         self._activities: Set[DynamicActivity] = set()
         self._cycle_activities: Iterator[DynamicActivity] = cycle(self._activities)
 
-    def __iter__(self) -> Iterator[Union[DynamicActivity, discord.BaseActivity]]:
+    async def __aiter__(self) -> 'ActivityCycle':
         """
-        Inexhaustible iterator (cycles trough iterable).
+        Inexhaustible iterator (cycles trough iterable infinitely).
         """
         return self
 
-    def __next__(self) -> Union[DynamicActivity, discord.BaseActivity]:
+    async def __anext__(self) -> Union[DynamicActivity, discord.BaseActivity]:
         """
         Reconstructs the activity name (to avoid stale data, example old guild count) and returns said activity.
         If activity is not DynamicActivity then it skips the name reconstruction part and just returns the activity.
@@ -160,15 +187,15 @@ class ActivityCycle:
         """
         activity = self._cycle_activities.__next__()
         if isinstance(activity, DynamicActivity):
-            activity.update_name()
+            await activity.update_name()
 
         return activity
 
-    def next(self) -> Union[DynamicActivity, discord.BaseActivity]:
+    async def next(self) -> Union[DynamicActivity, discord.BaseActivity]:
         """
         Alias for self.__next__()
         """
-        return self.__next__()
+        return await self.__anext__()
 
     def add(self, activity: Union[DynamicActivity, discord.BaseActivity]) -> None:
         """
