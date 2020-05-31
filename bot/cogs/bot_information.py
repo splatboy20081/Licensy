@@ -7,10 +7,10 @@ import discord
 from discord.ext import commands, tasks
 
 from bot import Licensy
-from bot.cogs.utils.embed_handler import info
-from bot.cogs.utils.licence_helper import get_current_time
-from bot.cogs.utils.activities import ActivityCycle, DynamicActivity
-from bot.cogs.utils.misc import construct_load_bar_string, construct_embed, time_ago, embed_space
+from bot.utils.embed_handler import info
+from bot.utils.licence_helper import get_current_time
+from bot.utils.activities import ActivityCycle, DynamicActivity
+from bot.utils.misc import construct_load_bar_string, construct_embed, time_ago, embed_space
 
 
 logger = logging.getLogger(__name__)
@@ -44,7 +44,7 @@ class BotInformation(commands.Cog):
         )
         self.activities.add(discord.Game(name="roles!"))
 
-    @tasks.loop(seconds=10)
+    @tasks.loop(minutes=5)
     async def activity_loop(self):
         if not self.bot.update_in_progress:
             await self.bot.change_presence(activity=await self.activities.next())
@@ -68,6 +68,30 @@ class BotInformation(commands.Cog):
                 await message.channel.send(embed=info(f"My prefix here is **{prefix}**"))
             else:
                 await message.channel.send(embed=info(f"My prefix in this guild is **{prefix}**", message.guild.me))
+
+    @commands.Cog.listener()
+    async def on_guild_join(self, guild: discord.Guild):
+        guild_log_channel = self.bot.config.GUILD_LOG_CHANNEL_ID
+
+        message = (
+            f"Bot has been added to **{guild}**\n"
+            f"New members **{len(guild.members)}**\n"
+            f"There is **{len(self.bot.guilds)}** guilds now."
+        )
+
+        await guild_log_channel.send(embed=info(message, guild.me, "Guild join"))
+
+    @commands.Cog.listener()
+    async def on_guild_remove(self, guild: discord.Guild):
+        guild_log_channel = self.bot.config.GUILD_LOG_CHANNEL_ID
+
+        message = (
+            f"Bot has been removed from **{guild}**\n"
+            f"Lost members **{len(guild.members)}**\n"
+            f"There is **{len(self.bot.guilds)}** guilds now."
+        )
+
+        await guild_log_channel.send(embed=info(message, None, "Guild remove"))
 
     @commands.command()
     async def ping(self, ctx):
