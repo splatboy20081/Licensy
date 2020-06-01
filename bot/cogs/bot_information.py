@@ -7,10 +7,11 @@ import discord
 from discord.ext import commands, tasks
 
 from bot import Licensy
-from bot.utils.embed_handler import info
+from bot.utils.message_handler import new_vote_message
 from bot.utils.licence_helper import get_current_time
 from bot.utils.activities import ActivityCycle, DynamicActivity
-from bot.utils.misc import construct_load_bar_string, construct_embed, time_ago, embed_space
+from bot.utils.embed_handler import info, success, construct_embed, suggestion
+from bot.utils.misc import construct_load_bar_string, time_ago, embed_space
 
 
 logger = logging.getLogger(__name__)
@@ -96,7 +97,7 @@ class BotInformation(commands.Cog):
     @commands.command()
     async def ping(self, ctx):
         """
-        Show bot ping.
+        Shows bot ping.
 
         Output
         -------
@@ -161,7 +162,7 @@ class BotInformation(commands.Cog):
     @commands.cooldown(1, 10, commands.BucketType.guild)
     async def about(self, ctx):
         """
-        Show bot information (stats/links/etc).
+        Shows bot information (stats/links/etc).
 
         """
         avg_users = round(len(self.bot.users) / len(self.bot.guilds))
@@ -226,13 +227,29 @@ class BotInformation(commands.Cog):
     @commands.command()
     async def uptime(self, ctx):
         """
-        Time since last boot.
+        Shows time since last boot.
 
         Output
         -------
         Humanized string representing time since boot.
         """
         await ctx.send(embed=info(self.last_boot(), ctx.me, title="Booted:"))
+
+    @commands.command()
+    @commands.cooldown(1, 1800, commands.BucketType.user)
+    async def suggest(self, ctx, *, message: str):
+        """
+        Suggest idea/improvement for the bot.
+
+        This message will get sent directly to the developer channel.
+        You can also join the support server and suggest there.
+        """
+        suggestion_channel = self.bot.get_channel(self.bot.config.SUGGESTIONS_CHANNEL_ID)
+
+        suggestion_msg = await suggestion_channel.send(embed=suggestion(message, ctx.author, ctx=ctx))
+        await new_vote_message(suggestion_msg)
+
+        await ctx.send(embed=success("Suggestion has been sent, thank you.", ctx.me), delete_after=5)
 
     def last_boot(self) -> str:
         """
