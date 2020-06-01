@@ -59,9 +59,9 @@ class BotInformation(commands.Cog):
         """
         If bot is mentioned in message (both in guild and DM) then show prefix that is used there.
 
-        Messages longer than 20 chars are not considered bot pings and we will skip those.
+        Messages longer than 25 chars are not considered bot pings and we will skip those.
         """
-        if self.bot.user in message.mentions and not message.author.bot and len(message.content) < 20:
+        if self.bot.user in message.mentions and not message.author.bot and len(message.content) < 25:
             prefix = await self.bot.get_guild_prefix(message.guild)
 
             if message.guild is None:
