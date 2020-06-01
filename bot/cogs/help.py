@@ -1,11 +1,10 @@
 import logging
 
-import discord
 from discord.ext import commands
 
 from bot import Licensy
+from bot.utils.misc import embed_space
 from bot.utils.embed_handler import info
-from bot.utils.misc import get_top_role_color
 
 
 logger = logging.getLogger(__name__)
@@ -13,11 +12,7 @@ logger = logging.getLogger(__name__)
 
 class PrettyHelpCommand(commands.MinimalHelpCommand):
     def get_ending_note(self):
-        command_name = self.invoked_with
-        return (
-            "Type `{0}{1} <command>` for more info on a command.\n"
-            "You can also type `{0}{1} <category>` for more info on a category."
-        ).format(self.clean_prefix, command_name)
+        return super().get_opening_note()
 
     def get_opening_note(self):
         if self.context.guild is None or self.context.author.guild_permissions.administrator:
@@ -27,16 +22,19 @@ class PrettyHelpCommand(commands.MinimalHelpCommand):
 
     def add_bot_commands_formatting(self, _commands, heading):
         if _commands:
-            outputs = [f"{command.name}\n\t{command.short_doc}" for command in _commands]
-            joined = "```\n" + "\n".join(outputs) + "\n```"
-            self.paginator.add_line(f"**__{heading}__**")
+            outputs = [f"`{self._surround_string_with(c.name, embed_space)}`" for c in _commands]
+            joined = self._surround_string_with('|', embed_space*2).join(outputs)
+            self.paginator.add_line(f"\n**__{heading}__**")
             self.paginator.add_line(joined)
+
+    @classmethod
+    def _surround_string_with(cls, base_string: str, surround_char: str) -> str:
+        return f"{surround_char}{base_string}{surround_char}"
 
     async def send_pages(self):
         destination = self.get_destination()
         for page in self.paginator.pages:
-            embed = discord.Embed(description=page, color=get_top_role_color(self.context.me))
-            await destination.send(embed=embed)
+            await destination.send(embed=info(page, self.context.me, ""))
 
 
 class Help(commands.Cog):
