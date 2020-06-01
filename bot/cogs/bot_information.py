@@ -7,8 +7,8 @@ import discord
 from discord.ext import commands, tasks
 
 from bot import Licensy
-from bot.utils.message_handler import new_vote_message
 from bot.utils.licence_helper import get_current_time
+from bot.utils.message_handler import new_vote_message
 from bot.utils.activities import ActivityCycle, DynamicActivity
 from bot.utils.embed_handler import info, success, construct_embed, suggestion
 from bot.utils.misc import construct_load_bar_string, time_ago, embed_space

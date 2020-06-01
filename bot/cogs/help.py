@@ -1,6 +1,7 @@
 import logging
 
 from discord.ext import commands
+from discord import Embed
 
 from bot import Licensy
 from bot.utils.misc import embed_space
@@ -34,7 +35,7 @@ class PrettyHelpCommand(commands.MinimalHelpCommand):
     async def send_pages(self):
         destination = self.get_destination()
         for page in self.paginator.pages:
-            await destination.send(embed=info(page, self.context.me, ""))
+            await destination.send(embed=info(page, self.context.me, Embed.Empty))
 
 
 class Help(commands.Cog):
