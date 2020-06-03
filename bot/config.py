@@ -19,7 +19,7 @@ UPDATE_CHANNEL_ID: Final = 625404542535598090
 MAXIMUM_UNUSED_GUILD_LICENSES: Final = 100  # Change this then also change FAQ
 MAXIMUM_LICENSE_DURATION_HOURS: Final = 8784  # Represents maximum possible hours (leap year) in 12 months
 
-DEVELOPERS: Final = {
+BOT_OWNERS: Final = {  # Warning! These users bypass all checks such as permissions and cool-downs
     "BrainDead": 197918569894379520
 }
 
