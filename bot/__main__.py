@@ -38,4 +38,18 @@ for extension_path in Path("bot/cogs").glob("*.py"):
         console_logger.info(f"loaded {dotted_path}")
 
 
+"""
+uvloop is a ultra fast asyncio event loop that makes asyncio 2-4x faster.
+It's a optional dependency as it is not supported on Windows.
+"""
+try:
+    # noinspection PyUnresolvedReferences
+    import uvloop
+    uvloop.install()
+except ImportError:
+    console_logger.info("uvloop not supported on this system.")
+else:
+    console_logger.info("uvloop successfully installed.")
+
+
 bot.run(os.getenv("BOT_TOKEN"))
