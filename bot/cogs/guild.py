@@ -1,6 +1,8 @@
 import logging
 
+import discord
 from discord.ext import commands
+from tortoise.exceptions import IntegrityError
 
 from bot import Licensy
 from bot import models
@@ -98,30 +100,159 @@ class Guild(commands.Cog):
     @commands.has_permissions(administrator=True)
     @commands.guild_only()
     async def toggle_dm_redeem(self, ctx):
-        pass
+        previous_data = await Guild.get(id=ctx.guild.id).values_list("enable_dm_redeem", flat=True)
+        next_state = not previous_data[0]
+        await models.Guild.get(id=ctx.guild.id).update(enable_dm_redeem=next_state)
+        await ctx.send(embed=success(f"DM redeem is set to **{next_state}**"))
 
     @commands.command(disabled=True)
     @commands.has_permissions(administrator=True)
     @commands.guild_only()
     async def toggle_duration_preservation(self, ctx):
+        previous_data = await Guild.get(id=ctx.guild.id).values_list("preserve_previous_duration", flat=True)
+        next_state = not previous_data[0]
+        await models.Guild.get(id=ctx.guild.id).update(preserve_previous_duration=next_state)
+        await ctx.send(embed=success(f"Preserve previous duration is set to **{next_state}**"))
+
+    @commands.command(disabled=True)
+    @commands.has_permissions(administrator=True)
+    @commands.guild_only()
+    async def setup_reminders(
+            self,
+            ctx,
+            reminders_enabled: bool,
+            reminder_activation_one: int,
+            reminder_activation_two: int,
+            reminder_activation_three: int,
+            reminders_channel: discord.TextChannel,
+            reminders_ping_in_reminders_channel: bool,
+            reminders_send_to_dm: bool
+    ):
+        # TODO positive integer converter for reminder activation
+        await models.Guild.get(id=ctx.guild.id).update(
+            reminders_enabled=reminders_enabled,
+            reminder_activation_one=reminder_activation_one,
+            reminder_activation_two=reminder_activation_two,
+            reminder_activation_three=reminder_activation_three,
+            reminders_channel_id=reminders_channel.id,
+            reminders_ping_in_reminders_channel=reminders_ping_in_reminders_channel,
+            reminders_send_to_dm=reminders_send_to_dm
+        )
+        await ctx.send(embed=success("Reminders successfully set."))
+
+    @commands.command(disabled=True)
+    @commands.has_permissions(administrator=True)
+    @commands.guild_only()
+    async def setup_logs(
+            self,
+            ctx,
+            license_log_channel_enabled: bool,
+            license_log_channel: discord.TextChannel
+    ):
+        await models.Guild.get(id=ctx.guild.id).update(
+            license_log_channel_enabled=license_log_channel_enabled,
+            license_log_channel_id=license_log_channel.id
+        )
+        await ctx.send(embed=success("Log channel successfully updated."))
+
+    @commands.command(disabled=True)
+    @commands.has_permissions(administrator=True)
+    @commands.guild_only()
+    async def setup_diagnostics(
+            self,
+            ctx,
+            bot_diagnostics_channel_enabled: bool,
+            bot_diagnostics_channel: discord.TextChannel
+    ):
+        await models.Guild.get(id=ctx.guild.id).update(
+            bot_diagnostics_channel_enabled=bot_diagnostics_channel_enabled,
+            bot_diagnostics_channel_id=bot_diagnostics_channel.id
+        )
+        await ctx.send(embed=success("Bot diagnostic channel successfully updated."))
+
+    @commands.command(disabled=True)
+    @commands.has_permissions(administrator=True)
+    @commands.guild_only()
+    async def edit_role(
+            self,
+            ctx,
+            role: discord.Role,
+            tier_level: int,
+            tier_power: int
+    ):
+        # TODO positive integer for tiers (0 is disabled)
+        if tier_level == 0:
+            tier_level = None
+
+        if tier_power == 0:
+            tier_power = None
+
+        if (role := await models.Role.get(id=role.id)).exists():
+            await role.update(tier_level=tier_level, tier_power=tier_power)
+        else:
+            guild = await models.Guild.get(id=ctx.guild.id)
+            await models.Role.create(guild=guild, id=role.id, tier_level=tier_level, tier_power=tier_power)
+
+        await ctx.send(embed=success("Role updated."))
+
+    @commands.command(disabled=True)
+    @commands.has_permissions(administrator=True)
+    @commands.guild_only()
+    async def create_role_packet(
+            self,
+            ctx,
+            name: str,
+            default_role_duration_minutes: int
+    ):
+        # TODO positive integer for duration
+        # TODO filter name
+
+        guild = await models.Guild.get(id=ctx.guild.id)
+
+        try:
+            await models.RolePacket.create(
+                guild=guild,
+                name=name,
+                default_role_duration_minutes=default_role_duration_minutes
+            )
+        except IntegrityError:
+            # TODO will this even work? Tortoise does not seem to propagate errors properly
+            await ctx.send(embed=failure("Role packet with that name already exists."))
+        else:
+            await ctx.send(embed=success("Role updated."))
+
+    @commands.command(disabled=True)
+    @commands.has_permissions(administrator=True)
+    @commands.guild_only()
+    async def add_packet_role(
+            self,
+            ctx,
+            role_packet_name: str,
+            role: discord.Role
+    ):
         pass
 
     @commands.command(disabled=True)
     @commands.has_permissions(administrator=True)
     @commands.guild_only()
-    async def setup_reminders(self, ctx):
+    async def remove_packet_role(
+            self,
+            ctx,
+            role_packet_name: str,
+            role: discord.Role
+    ):
         pass
 
     @commands.command(disabled=True)
     @commands.has_permissions(administrator=True)
     @commands.guild_only()
-    async def setup_logs(self, ctx):
-        pass
-
-    @commands.command(disabled=True)
-    @commands.has_permissions(administrator=True)
-    @commands.guild_only()
-    async def setup_diagnostics(self, ctx):
+    async def edit_packet_role(
+            self,
+            ctx,
+            role_packet_name: str,
+            role: discord.Role,
+            duration_minutes: int
+    ):
         pass
 
     @commands.command(disabled=True)
