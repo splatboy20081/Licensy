@@ -141,8 +141,8 @@ class BotInformation(commands.Cog):
         )
         await ctx.send(embed=info(description, ctx.me, title="Ask away!"))
 
-    @commands.command(aliases=["donate"])
-    async def give_support(self, ctx):
+    @commands.command()
+    async def donate(self, ctx):
         """
         Support development.
 
@@ -151,16 +151,44 @@ class BotInformation(commands.Cog):
         Shows link for donations, link to bot listing voting and link to source code.
         """
         description = (
-            f"Donate on Patreon: [donate link]({self.bot.config.PATREON_LINK})\n"
+            f"Donate on Patreon: [patreon link]({self.bot.config.PATREON_LINK})\n"
+            f"Donate on Paypal: [paypal link]({self.bot.config.PAYPAL_LINK})\n\n"
+            "Additional things you can do to support:\n\n"
             f"Vote for the bot: [vote link]({self.bot.config.TOP_GG_VOTE_LINK})\n\n"
             f"Take a look at the source code: {self.bot.config.SOURCE_CODE_LINK}\n"
-            f"Any improvements/suggestions are welcome. If you find it helpful feel free to star the repo ;)"
+            "Any improvements/suggestions are welcome. If you find it helpful feel free to star the repo ;)"
         )
         await ctx.send(embed=info(description, ctx.me, title="Support the development:"))
 
-    @commands.command(aliases=("stats", "status"))
+    @commands.command()
+    async def vote(self, ctx):
+        """
+        Vote for Licensy on top.gg (bot list).
+
+        Output
+        -------
+        Link to top.gg bot listing.
+        """
+        await ctx.send(embed=info(self.bot.config.TOP_GG_VOTE_LINK, ctx.me, title="Thank you."))
+
+    @commands.command(aliases=("git", "github"))
+    async def source(self, ctx):
+        """
+        Shows link to Github source code.
+
+        Output
+        -------
+        Link to source code on Github.
+        """
+        msg = (
+            f"Any improvements/suggestions are welcome. If you find it helpful feel free to star the repo ;)\n\n"
+            f"{self.bot.config.SOURCE_CODE_LINK}"
+        )
+        await ctx.send(embed=info(msg, ctx.me, title="Source code"))
+
+    @commands.command(aliases=("status", "statistics", "about"))
     @commands.cooldown(1, 10, commands.BucketType.guild)
-    async def about(self, ctx):
+    async def stats(self, ctx):
         """
         Shows bot information (stats/links/etc).
 
@@ -196,9 +224,9 @@ class BotInformation(commands.Cog):
 
         footer = (f"[Invite]({self.get_bot_invite_link()})"
                   f" | [Donate]({self.bot.config.PATREON_LINK})"
-                  f" | [Support]({self.bot.config.SUPPORT_CHANNEL_INVITE})"
+                  f" | [Support server]({self.bot.config.SUPPORT_CHANNEL_INVITE})"
                   f" | [Vote]({self.bot.config.TOP_GG_VOTE_LINK})"
-                  f" | [Source]({self.bot.config.SOURCE_CODE_LINK})")
+                  f" | [Github]({self.bot.config.SOURCE_CODE_LINK})")
 
         # The weird numbers is just guessing number of spaces so the lines align
         # Needed since embeds are not monospaced font
