@@ -11,8 +11,9 @@ class Guild(Model):
     custom_license_format = CharField(max_length=100, default="")
     license_branding = CharField(max_length=50, default="")
     timezone = SmallIntField(default=0)
-    enable_dm_commands = BooleanField(default=True)
+    enable_dm_redeem = BooleanField(default=True)
     preserve_previous_duration = BooleanField(default=True)
+    language = CharField(max_length=5, default="en_EN")
 
     reminders_enabled = BooleanField(default=True)
     reminder_activation_one = SmallIntField(default=1)
