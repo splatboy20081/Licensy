@@ -70,9 +70,9 @@ class Duration(Converter):
             if match is None or not match.group(0):
                 raise BadArgument(f"Invalid duration provided `{word}`.")
 
-            time_data = {k: int(v) for k, v in match.groupdict(default=0).items()}
-            for key, value in time_data.items():
-                minutes += self.minute_converter[key] * value
+            time_data = {unit: int(amount) for unit, amount in match.groupdict(default="0").items()}
+            for unit, amount in time_data.items():
+                minutes += self.minute_converter[unit] * amount
 
         return minutes
 
