@@ -1,12 +1,14 @@
 import logging
+from typing import Union
 
 import discord
 from discord.ext import commands
-from tortoise.exceptions import IntegrityError
 
-from bot import Licensy
-from bot import models
-from bot.utils.embed_handler import success, failure
+from bot import Licensy, models
+from bot.utils.i18n_handler import LANGUAGES
+from bot.utils.licence_helper import LicenseFormatter
+from bot.utils.embed_handler import success, failure, info
+from bot.utils.converters import NonNegativeInteger
 
 
 logger = logging.getLogger(__name__)
@@ -54,22 +56,29 @@ class Guild(commands.Cog):
             await ctx.send(embed=failure("Prefix is too long! Maximum of 10 characters please."))
         else:
             await models.Guild.get(id=ctx.guild.id).update(custom_prefix=prefix)
+            self.bot.update_prefix_cache(ctx.guild.id, prefix)
             await ctx.send(embed=success(f"Successfully changed prefix to **{prefix}**", ctx.me))
 
     @commands.command(disabled=True)
     @commands.has_permissions(administrator=True)
     @commands.guild_only()
     async def license_format(self, ctx, license_format: str):
-        # TODO check if format is secure enough/valid
-        if True:
+        if LicenseFormatter.is_secured(license_format):
             await models.Guild.get(id=ctx.guild.id).update(custom_license_format=license_format)
             await ctx.send(embed=success("Successfully changed license format.", ctx.me))
+        else:
+            await ctx.send(
+                embed=failure(
+                    "Format is not secure enough.\n\n"
+                    f"Current permutation count: {LicenseFormatter.get_format_permutations(license_format)}\n"
+                    f"Required permutation count: {LicenseFormatter.min_permutation_count}"
+                )
+            )
 
     @commands.command(disabled=True, aliases=["branding"])
     @commands.has_permissions(administrator=True)
     @commands.guild_only()
     async def license_branding(self, ctx, license_branding: str):
-        # TODO clean content of any special characters including spaces
         if len(license_branding) > 50:
             await ctx.send(embed=failure("Branding is too long! Maximum of 50 characters please."))
         else:
@@ -87,8 +96,9 @@ class Guild(commands.Cog):
         ----------
         timezone: int
             Timezone in UTC (from -12 to 14).
-            Note that this does not change bot behaviour in any way, you cannot change the bot
-            timezone itself. This is just used to displaying bot time in your guild timezone.
+
+            Note that this does not change bot behaviour in any way, you cannot change the bot timezone itself.
+            This is just used to displaying bot time in your guild timezone.
         """
         if timezone not in range(-12, 15):
             await ctx.send(embed=failure("Invalid UTC timezone."))
@@ -99,20 +109,18 @@ class Guild(commands.Cog):
     @commands.command(disabled=True)
     @commands.has_permissions(administrator=True)
     @commands.guild_only()
-    async def toggle_dm_redeem(self, ctx):
-        previous_data = await Guild.get(id=ctx.guild.id).values_list("enable_dm_redeem", flat=True)
-        next_state = not previous_data[0]
-        await models.Guild.get(id=ctx.guild.id).update(enable_dm_redeem=next_state)
-        await ctx.send(embed=success(f"DM redeem is set to **{next_state}**"))
+    async def setup_guild_misc(self, ctx, enable_dm_redeem: bool, preserve_previous_duration: bool, language: str):
+        await models.Guild.get(id=ctx.guild.id).update(enable_dm_redeem=enable_dm_redeem)
+        await models.Guild.get(id=ctx.guild.id).update(preserve_previous_duration=preserve_previous_duration)
+        updated_count = 2
 
-    @commands.command(disabled=True)
-    @commands.has_permissions(administrator=True)
-    @commands.guild_only()
-    async def toggle_duration_preservation(self, ctx):
-        previous_data = await Guild.get(id=ctx.guild.id).values_list("preserve_previous_duration", flat=True)
-        next_state = not previous_data[0]
-        await models.Guild.get(id=ctx.guild.id).update(preserve_previous_duration=next_state)
-        await ctx.send(embed=success(f"Preserve previous duration is set to **{next_state}**"))
+        if language not in LANGUAGES:
+            await ctx.send(embed=failure(f"**{language}** is not found in available languages."))
+        else:
+            await models.Guild.get(id=ctx.guild.id).update(preserve_previous_duration=language)
+            updated_count += 1
+
+        await ctx.send(embed=success(f"Successfully updated {updated_count} fields."))
 
     @commands.command(disabled=True)
     @commands.has_permissions(administrator=True)
@@ -121,14 +129,13 @@ class Guild(commands.Cog):
             self,
             ctx,
             reminders_enabled: bool,
-            reminder_activation_one: int,
-            reminder_activation_two: int,
-            reminder_activation_three: int,
+            reminder_activation_one: NonNegativeInteger,
+            reminder_activation_two: NonNegativeInteger,
+            reminder_activation_three: NonNegativeInteger,
             reminders_channel: discord.TextChannel,
             reminders_ping_in_reminders_channel: bool,
             reminders_send_to_dm: bool
     ):
-        # TODO positive integer converter for reminder activation
         await models.Guild.get(id=ctx.guild.id).update(
             reminders_enabled=reminders_enabled,
             reminder_activation_one=reminder_activation_one,
@@ -170,112 +177,67 @@ class Guild(commands.Cog):
         )
         await ctx.send(embed=success("Bot diagnostic channel successfully updated."))
 
-    @commands.command(disabled=True)
-    @commands.has_permissions(administrator=True)
-    @commands.guild_only()
-    async def edit_role(
-            self,
-            ctx,
-            role: discord.Role,
-            tier_level: int,
-            tier_power: int
-    ):
-        # TODO positive integer for tiers (0 is disabled)
-        if tier_level == 0:
-            tier_level = None
-
-        if tier_power == 0:
-            tier_power = None
-
-        if (role := await models.Role.get(id=role.id)).exists():
-            await role.update(tier_level=tier_level, tier_power=tier_power)
-        else:
-            guild = await models.Guild.get(id=ctx.guild.id)
-            await models.Role.create(guild=guild, id=role.id, tier_level=tier_level, tier_power=tier_power)
-
-        await ctx.send(embed=success("Role updated."))
-
-    @commands.command(disabled=True)
-    @commands.has_permissions(administrator=True)
-    @commands.guild_only()
-    async def create_role_packet(
-            self,
-            ctx,
-            name: str,
-            default_role_duration_minutes: int
-    ):
-        # TODO positive integer for duration
-        # TODO filter name
-
-        guild = await models.Guild.get(id=ctx.guild.id)
-
-        try:
-            await models.RolePacket.create(
-                guild=guild,
-                name=name,
-                default_role_duration_minutes=default_role_duration_minutes
-            )
-        except IntegrityError:
-            # TODO will this even work? Tortoise does not seem to propagate errors properly
-            await ctx.send(embed=failure("Role packet with that name already exists."))
-        else:
-            await ctx.send(embed=success("Role updated."))
-
-    @commands.command(disabled=True)
-    @commands.has_permissions(administrator=True)
-    @commands.guild_only()
-    async def add_packet_role(
-            self,
-            ctx,
-            role_packet_name: str,
-            role: discord.Role
-    ):
-        pass
-
-    @commands.command(disabled=True)
-    @commands.has_permissions(administrator=True)
-    @commands.guild_only()
-    async def remove_packet_role(
-            self,
-            ctx,
-            role_packet_name: str,
-            role: discord.Role
-    ):
-        pass
-
-    @commands.command(disabled=True)
-    @commands.has_permissions(administrator=True)
-    @commands.guild_only()
-    async def edit_packet_role(
-            self,
-            ctx,
-            role_packet_name: str,
-            role: discord.Role,
-            duration_minutes: int
-    ):
-        pass
-
-    @commands.command(disabled=True)
+    @commands.command(disabled=True, aliases=["guild_data", "guild"])
     @commands.guild_only()
     async def guild_info(self, ctx):
         """
         Shows database data for the guild.
         """
         guild = await models.Guild.get(id=ctx.guild.id)
-        if not (prefix := guild.prefix):
-            prefix = self.bot.get_guild_prefix(ctx.guild)
 
-        stored_license_count = 0
-        active_license_count = 0
+        msgs = [
+            f"Cached prefix {await self.bot.get_guild_prefix(ctx.guild)}",
+            f"Custom prefix: {self._is_setup(guild.custom_prefix)}",
 
-        msg = (
-            "Database guild info:\n"
-            f"Prefix: **{prefix}**\n"
-            f"Stored licenses: **{stored_license_count}**\n"
-            f"Active role subscriptions: **{active_license_count}**"
-        )
+            f"\nCustom license format: {self._is_setup(guild.custom_license_format)}",
+            f"License branding: {self._is_setup(guild.license_branding)}",
+            f"Guild timezone: {self._is_setup(guild.timezone)}",
+            f"DM redeem enabled: {guild.enable_dm_redeem}",
+            f"Preserve previous duration enabled: {guild.preserve_previous_duration}",
+            f"Guild language: {guild.language}",
 
-        await ctx.send(embed=success(msg, ctx.me))
+            f"\nReminders enabled {guild.reminders_enabled}",
+        ]
+
+        if guild.reminders_enabled:
+            msgs.extend([
+                f"Reminder activation one: {self._is_setup(guild.reminder_activation_one)}",
+                f"Reminder activation two: {self._is_setup(guild.reminder_activation_two)}",
+                f"Reminder activation three: {self._is_setup(guild.reminder_activation_three)}",
+                f"Reminder channel ID: {self._is_setup(guild.reminders_channel_id)}",
+                f"Ping reminder in reminders channel: {guild.reminders_ping_in_reminders_channel}",
+                f"Send reminders to dm: {guild.reminders_send_to_dm}"
+            ])
+
+        msgs.append(f"\nLicense log channel enabled {guild.license_log_channel_enabled}")
+        if guild.license_log_channel_enabled:
+            msgs.append(f"License log channel ID {self._is_setup(guild.license_log_channel_id)}")
+
+        msgs.append(f"\nBot diagnostics channel enabled {guild.bot_diagnostics_channel_enabled}")
+        if guild.bot_diagnostics_channel_enabled:
+            msgs.append(f"Bot diagnostics channel ID {self._is_setup(guild.bot_diagnostics_channel_id)}")
+
+        # TODO stored license count/active license count
+
+        await ctx.send(embed=info("\n".join(msgs), ctx.me, title="Database guild info"))
+
+    @staticmethod
+    def _is_setup(value: Union[int, str]) -> Union[int, str]:
+        """
+        Default values in database (considered not set by user) are empty strings for string and 0 for integers.
+        So this function just checks for those default values so instead of showing empty strings and zeroes
+        we show "Not set".
+        """
+        if isinstance(value, int):
+            if value == 0:
+                return "Not set"
+            else:
+                return value
+        elif isinstance(value, str):
+            if value:
+                return value
+            else:
+                return "Not set"
 
 
 def setup(bot):
