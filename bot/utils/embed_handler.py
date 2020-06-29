@@ -104,7 +104,7 @@ def failure(message: str) -> Embed:
     return simple_embed(message, "Failure", Color.red())
 
 
-def log(message: str, *, ctx: Union[Context, None], title: str = "Log") -> Embed:
+def log(message: str, *, ctx: Union[Context, None] = None, title: str = "Log") -> Embed:
     """
     Constructs log embed that can have additional info from context such as
     guild, author and channel ID set in its footer.
@@ -115,8 +115,8 @@ def log(message: str, *, ctx: Union[Context, None], title: str = "Log") -> Embed
     message: str
         Description to be used for embed.
     ctx: Union[discord.ext.commands.Context, None]
-        Context to get footer data from.
-        Data is guild (if it's not None), author and channel ID.
+        Context to get footer data from. Defaults to None.
+        If it's not None embed footer will have guild, author and channel ID.
         If ctx is None returns embed without footer.
     title: str
         Title to be used for embed. Defaults to "Log"
@@ -129,12 +129,68 @@ def log(message: str, *, ctx: Union[Context, None], title: str = "Log") -> Embed
     log_embed = simple_embed(message, title, Color.red())
 
     if ctx is not None:
-        guild = "DM" if ctx.guild is None else ctx.guild.id
-        author = f"Author: {ctx.author} ; {ctx.author.id}"
-        footer = f"Guild: {guild}    Author: {author}    Channel {ctx.channel.id}"
+        guild = "DM" if ctx.guild is None else f"{ctx.guild.name} {ctx.guild.id}"
+        author = "No author" if ctx.message is None else ctx.author.id
+        channel = "No channel" if ctx.message is None else ctx.channel.id
+        footer = f"guild: {guild}\nauthor: {author}\nchannel: {channel}"
         log_embed.set_footer(text=footer)
 
     return log_embed
+
+
+def suggestion(message: str, member: Union[Member, User], *, ctx: Context) -> Embed:
+    """
+    Constructs embed that is used specifically for suggestions.
+    It will have thumbnail from param member and author and guild info in footer from param ctx.
+
+    Parameters
+    ----------
+    message: str
+        Description to be used for embed.
+    member: Union[Member, User]
+        Member object to get avatar url for embed thumbnail.
+    ctx:  discord.ext.commands.Context
+        Context to get author and guild info that will be used in embed footer.
+
+    Returns
+    -------
+    embed: discord.Embed
+        Newly constructed suggestion embed.
+    """
+    embed = info(message, member, "New suggestion")
+    embed.set_thumbnail(url=str(member.avatar_url))
+    embed.set_footer(text=f"From {ctx.author} in {ctx.guild} {ctx.guild.id}")
+    return embed
+
+
+def construct_embed(author: Union[Member, User], *, description: str = None, **kwargs):
+    """
+    Constructs embed with fields.
+
+    Parameters
+    ----------
+    author: Union[Member, User]
+        Author that will be set to embed and whose top role color will be used for embed color.
+        If it's user then defaults to green color.
+    description: str
+        String to be used as embed description.
+        Defaults to None (nothing).
+    kwargs
+        Pair (so total count is even number) of field name and field content arguments.
+        These will be set as embed fields.
+
+    Returns
+    -------
+    embed: discord.Embed
+        Newly constructed embed.
+    """
+    embed = Embed(description=description, color=get_top_role_color(author, fallback_color=Color.green()))
+    embed.set_author(name=author.display_name, icon_url=author.avatar_url)
+
+    for field_name, field_content in kwargs.items():
+        embed.add_field(name=field_name, value=field_content, inline=True)
+
+    return embed
 
 
 def get_top_role_color(member: Union[Member, User, None], *, fallback_color: Color) -> Color:
