@@ -1,7 +1,9 @@
 import sys
 import logging
+import asyncio
 import traceback
 import importlib
+from pathlib import Path
 from typing import Union, Generator
 from asyncio.exceptions import TimeoutError as AsyncioTimeoutError
 
@@ -9,7 +11,7 @@ import discord
 from discord.ext import commands
 
 from bot import config
-from bot.database_client import DatabaseClient
+from bot.models import Guild
 from bot.utils.embed_handler import failure, log
 from bot.utils.licence_helper import get_current_time
 from bot.utils.errors import DatabaseMissingData
@@ -20,9 +22,8 @@ console_logger = logging.getLogger("console")
 
 
 class Licensy(commands.Bot):
-    def __init__(self):
+    def __init__(self, loop: asyncio.AbstractEventLoop = None):
         self.config = config
-        self.db_client = DatabaseClient()
         self.update_in_progress: bool = False
         self.up_time_start_time = get_current_time()
         self._prefix_cache = {}
@@ -32,6 +33,7 @@ class Licensy(commands.Bot):
 
         super().__init__(
             max_messages=None,
+            loop=loop,
             command_prefix=Licensy.prefix_callable,
             case_insensitive=True,
             description=self.config.BOT_DESCRIPTION,
@@ -54,21 +56,30 @@ class Licensy(commands.Bot):
         if guild is None:
             return default_prefix
 
-        if cached_prefix := self._prefix_cache.get(guild.id):
-            return cached_prefix
-
-        try:
-            fetched_prefix = await self.db_client.get_guild_prefix(guild.id)
-        except Exception as err:
-            # If fetching prefix from database errors just use the default prefix.
-            logger.error(
-                f"Can't get guild {guild} prefix. Error:{err}. "
-                f"Using '{default_prefix}' as prefix."
-            )
-            return default_prefix
+        if guild.id in self._prefix_cache:
+            # If prefix is empty string then no custom prefix is set
+            if cached_prefix := self._prefix_cache[guild.id]:
+                return cached_prefix
+            else:
+                return default_prefix
         else:
-            self._prefix_cache[guild.id] = fetched_prefix
-            return fetched_prefix
+            # I guild is not found it could mean it's new, so just fetch it's prefix.
+            try:
+                fetched_prefix = (await Guild.get(id=guild.id).values_list("custom_prefix", flat=True))[0]
+            except Exception as err:
+                # If fetching prefix from database errors just use the default prefix.
+                logger.error(f"Can't get guild {guild} prefix. Error:{err}. Using '{default_prefix}' as prefix.")
+                return default_prefix
+            else:
+                self._prefix_cache[guild.id] = fetched_prefix
+
+                if fetched_prefix:
+                    return fetched_prefix
+                else:
+                    return default_prefix
+
+    def update_prefix_cache(self, guild_id: int, new_prefix: str):
+        self._prefix_cache[guild_id] = new_prefix
 
     def reload_config(self):
         importlib.reload(config)
@@ -76,16 +87,26 @@ class Licensy(commands.Bot):
         logger.info("Config successfully reloaded.")
 
     async def _populate_prefix_cache(self) -> None:
-        self._prefix_cache = await self.db_client.get_all_guild_prefixes()
+        prefix_data = await Guild.all().values_list("id", "custom_prefix")
+        self._prefix_cache = {item[0]: item[1] for item in prefix_data}
         logger.info("Guild prefix cache successfully reloaded.")
 
     async def _populate_language_cache(self) -> None:
-        self._language_cache = await self.db_client.get_all_guild_languages()
+        language_data = await Guild.all().values_list("id", "language")
+        self._language_cache = {item[0]: item[1] for item in language_data}
         logger.info("Guild language cache successfully reloaded.")
 
     async def _load_owner(self) -> discord.User:
         app_info = await self.application_info()
         return app_info.owner
+
+    @staticmethod
+    async def on_connect():
+        logger.info("Connection to Discord established")
+
+    @staticmethod
+    async def on_disconnect():
+        logger.warning("Connection to Discord lost.")
 
     async def on_ready(self):
         if not self._was_ready_once:
@@ -103,7 +124,27 @@ class Licensy(commands.Bot):
             "Further logging output will go to log file.."
         )
 
+        await self._load_extensions()
         self._owner = await self._load_owner()
+
+    async def _load_extensions(self):
+        allowed_extensions = ("help", "guild", "bot_information")  # TODO temporal for development stage
+
+        for extension_path in Path("bot/cogs").glob("*.py"):
+            extension_name = extension_path.stem
+
+            if extension_name not in allowed_extensions:
+                continue
+
+            dotted_path = f"bot.cogs.{extension_name}"
+
+            try:
+                self.load_extension(dotted_path)
+            except Exception as e:
+                traceback_msg = traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)
+                console_logger.info(f"Failed to load cog {dotted_path} - traceback:{traceback_msg}")
+            else:
+                console_logger.info(f"\tloaded {dotted_path}")
 
     async def on_command_error(self, context: commands.Context, exception: Exception):
         ctx = context
@@ -212,7 +253,7 @@ class Licensy(commands.Bot):
         context: Union[commands.Context, None]
             Context if found else None
         """
-        if ctx := kwargs.pop("ctx", None) is not None:
+        if (ctx := kwargs.pop("ctx", None)) is not None:
             return ctx
 
         for arg in args:
@@ -251,6 +292,10 @@ class Licensy(commands.Bot):
             await ctx.send(embed=failure(f"{e}"))
         else:
             return True
+
+    async def log_exception(self, exception: Exception, *, ctx: Union[commands.Context, None] = None):
+        traceback_msg = "".join(traceback.format_tb(exception.__traceback__))
+        await self.log_error(traceback_msg, ctx=ctx)
 
     async def log_error(self, message: str, *, ctx: Union[commands.Context, None] = None):
         if not self.is_ready() or self.is_closed():
