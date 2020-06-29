@@ -4,6 +4,18 @@ from tortoise.fields import (
     CharField, BooleanField, DatetimeField, CASCADE, SET_NULL
 )
 
+"""
+TODO development notes:
+Fields with default values of:
+    "" in case of CharField
+    0 in case of AnyIntegerField (special cases are set to None like tier_power and tier level
+    so they can properly be constrained to unique constraint)
+represent that these values are not set.
+
+For example custom_prefix in Guild if it's "" it means it was not set so we're gonna use global
+default prefix defined in bot constants.
+"""
+
 
 class Guild(Model):
     id = BigIntField(pk=True, generated=False)
