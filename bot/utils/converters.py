@@ -77,10 +77,42 @@ class Duration(Converter):
         return minutes
 
 
+class NonNegativeInteger(Converter):
+    async def convert(self, ctx: Context, message: str) -> int:
+        """
+        Converts param message to non-negative integer (>=0).
+
+        Parameters
+        ----------
+        ctx: discord.ext.commands.Context
+            Context for converter.
+        message: str
+            Message argument that we will try to convert to non-negative integer.
+
+        Raises
+        ------
+        ValueError
+            Param message can't be converted to int.
+
+        discord.ext.commands.BadArgument
+            If the integer is negative.
+
+        Returns
+        -------
+        non_negative_integer : int
+            Integer that is not negative (>=0)
+        """
+        non_negative_integer = int(message)
+        if non_negative_integer < 0:
+            raise BadArgument("Passed integer can't be negative.")
+        else:
+            return non_negative_integer
+
+
 class PositiveInteger(Converter):
     async def convert(self, ctx: Context, message: str) -> int:
         """
-        Converts param message to positive int (>0).
+        Converts param message to positive integer (>0).
 
         Parameters
         ----------
@@ -95,15 +127,15 @@ class PositiveInteger(Converter):
             Param message can't be converted to int.
 
         discord.ext.commands.BadArgument
-            If the integer is not positive aka less than 1.
+            If the integer is not positive (<1).
 
         Returns
         -------
         positive_integer : int
-            Integer that is positive (>0)
+            Integer that is positive (>0).
         """
-        integer = int(message)
-        if integer < 1:
-            raise BadArgument("Passed integer has to be larger than zero.")
+        positive_integer = int(message)
+        if positive_integer < 1:
+            raise BadArgument("Passed integer must be larger than 0.")
         else:
-            return integer
+            return positive_integer
