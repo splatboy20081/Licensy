@@ -13,7 +13,6 @@ from bot.utils.activities import ActivityCycle, DynamicActivity
 from bot.utils.embed_handler import info, success, construct_embed, suggestion
 from bot.utils.misc import construct_load_bar_string, time_ago, embed_space
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -39,7 +38,14 @@ class BotInformation(commands.Cog):
         self.activities.add(
             DynamicActivity(
                 type=discord.ActivityType.watching,
-                name_callable=self.bot.db_client.get_total_stored_licenses,
+                name_callable=lambda: "TODO get stored license count",
+                name_suffix=" licenses"
+            )
+        )
+        self.activities.add(
+            DynamicActivity(
+                type=discord.ActivityType.watching,
+                name_callable=lambda: "TODO get licensed members count",
                 name_suffix=" licenses"
             )
         )
@@ -195,8 +201,8 @@ class BotInformation(commands.Cog):
         """
         avg_users = round(len(self.bot.users) / len(self.bot.guilds))
 
-        active_licenses = await self.bot.db_client.get_licensed_roles_total_count()
-        stored_licenses = await self.bot.db_client.get_stored_license_total_count()
+        active_licenses = 0
+        stored_licenses = 0
 
         bot_ram_usage = self.process.memory_full_info().rss / 1024 ** 2
         bot_ram_usage = f"{bot_ram_usage:.2f} MB"

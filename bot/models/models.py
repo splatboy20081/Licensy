@@ -13,7 +13,7 @@ class Guild(Model):
     timezone = SmallIntField(default=0)
     enable_dm_redeem = BooleanField(default=True)
     preserve_previous_duration = BooleanField(default=True)
-    language = CharField(max_length=5, default="en_EN")
+    language = CharField(max_length=5, default="en")
 
     reminders_enabled = BooleanField(default=True)
     reminder_activation_one = SmallIntField(default=1)
