@@ -78,53 +78,53 @@ class Duration(Converter):
 
 
 class NonNegativeInteger(Converter):
-    async def convert(self, ctx: Context, message: str) -> int:
+    async def convert(self, ctx: Context, argument: str) -> int:
         """
-        Converts param message to non-negative integer (>=0).
+        Converts argument to non-negative integer (>=0).
 
         Parameters
         ----------
         ctx: discord.ext.commands.Context
             Context for converter.
-        message: str
-            Message argument that we will try to convert to non-negative integer.
+        argument: str
+            Argument that we will try to convert to non-negative integer.
 
         Raises
         ------
         ValueError
-            Param message can't be converted to int.
+            Argument can't be converted to int.
 
         discord.ext.commands.BadArgument
-            If the integer is negative.
+            If the argument is a negative integer.
 
         Returns
         -------
         non_negative_integer : int
             Integer that is not negative (>=0)
         """
-        non_negative_integer = int(message)
+        non_negative_integer = int(argument)
         if non_negative_integer < 0:
-            raise BadArgument("Passed integer can't be negative.")
+            raise BadArgument(f"Passed **{non_negative_integer}** integer cannot be negative.")
         else:
             return non_negative_integer
 
 
 class PositiveInteger(Converter):
-    async def convert(self, ctx: Context, message: str) -> int:
+    async def convert(self, ctx: Context, argument: str) -> int:
         """
-        Converts param message to positive integer (>0).
+        Converts argument to positive integer (>0).
 
         Parameters
         ----------
         ctx: discord.ext.commands.Context
             Context for converter.
-        message: str
-            Message argument that we will try to convert to positive integer.
+        argument: str
+            Argument that we will try to convert to positive integer.
 
         Raises
         ------
         ValueError
-            Param message can't be converted to int.
+            Argument can't be converted to int.
 
         discord.ext.commands.BadArgument
             If the integer is not positive (<1).
@@ -134,8 +134,8 @@ class PositiveInteger(Converter):
         positive_integer : int
             Integer that is positive (>0).
         """
-        positive_integer = int(message)
+        positive_integer = int(argument)
         if positive_integer < 1:
-            raise BadArgument("Passed integer must be larger than 0.")
+            raise BadArgument(f"Passed integer **{positive_integer}** must be larger than 0.")
         else:
             return positive_integer

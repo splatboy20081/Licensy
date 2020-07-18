@@ -23,7 +23,7 @@ class PrettyHelpCommand(commands.MinimalHelpCommand):
 
     def add_bot_commands_formatting(self, _commands, heading):
         if _commands:
-            outputs = [f"`{self._surround_string_with(c.name, embed_space)}`" for c in _commands]
+            outputs = [f"`{c.name}`" for c in _commands]
             joined = self._surround_string_with('|', embed_space*2).join(outputs)
             self.paginator.add_line(f"\n**__{heading}__**")
             self.paginator.add_line(joined)
