@@ -5,6 +5,9 @@ from tortoise.fields import (
     BigIntField, CharField, BooleanField, DatetimeField, CASCADE, SET_NULL, RESTRICT
 )
 
+from bot.utils import i18n_handler
+from bot.utils.licence_helper import LicenseFormatter
+
 
 # TODO add either database level or code level checks for fields.
 # TODO periodic check for cleaning data, example if LicensedMember has no more LicensedRoles then remove
@@ -106,8 +109,22 @@ class Guild(Model):
 
     async def _post_delete(self, *args, **kwargs) -> None:
         """Deals with deleting ReminderActivations table after this table is deleted."""
-        await super()._post_delete(*args, *kwargs)
+        await super()._post_delete(*args, **kwargs)
         await self.reminder_activations.delete()
+
+    async def _pre_save(self, *args, **kwargs) -> None:
+        if len(self.custom_prefix) > self.custom_prefix.max_length:
+            raise FieldError(f"Custom prefix has to be under {self.custom_prefix.max_length} characters.")
+        elif not LicenseFormatter.is_secure(self.custom_license_format):
+            raise FieldError("Your custom license format is not secure enough! Not enough possible permutations!")
+        elif len(self.license_branding) > self.license_branding.max_length:
+            raise FieldError(f"License branding has to be under {self.license_branding.max_length} characters.")
+        elif self.timezone not in range(-12, 15):
+            raise FieldError("Invalid timezone.")
+        elif self.language not in i18n_handler.LANGUAGES:
+            raise FieldError("Unsupported guild language.")
+
+        await super()._pre_save(*args, **kwargs)
 
 
 class Role(Model):
@@ -154,6 +171,12 @@ class RolePacket(Model):
         table = "role_packets"
         unique_together = (("name", "guild"),)
 
+    async def _pre_save(self, *args, **kwargs) -> None:
+        if len(self.name) > self.name.max_length:
+            raise FieldError(f"Packet name has to be under {self.name.max_length} characters.")
+
+        await super()._pre_save(*args, **kwargs)
+
 
 class PacketRole(Model):
     """Single role from role packet."""
@@ -166,29 +189,63 @@ class PacketRole(Model):
         unique_together = (("role_packet", "role"),)
 
     async def _pre_save(self, *args, **kwargs) -> None:
-        """Deals with limiting number of roles in role packet"""
-        if await self.role_packet.packet_roles.count() > RolePacket.MAXIMUM_ROLES:
+        if self.duration < 0:
+            raise FieldError("Invalid duration for role.")
+        elif await self.role_packet.packet_roles.count() > RolePacket.MAXIMUM_ROLES:
             raise IntegrityError(
                 f"Cannot add packet role to `{self.role_packet.name}` as number of "  # TODO maybe need to await?
                 f"roles in packet would exceed limit of {RolePacket.MAXIMUM_ROLES} roles."
             )
 
+        await super()._pre_save(*args, **kwargs)
+
 
 class License(Model):
+    key = CharField(pk=True, generated=False, max_length=50)
+    reminder_activations = OneToOneField("ReminderActivations", on_delete=RESTRICT)
     guild: ForeignKeyRelation[Guild] = ForeignKeyField("models.Guild", on_delete=CASCADE)
     role_packet: ForeignKeyRelation[RolePacket] = ForeignKeyField("models.RolePacket", on_delete=SET_NULL, null=True)
-    reminder_activations = OneToOneField("ReminderActivations", on_delete=RESTRICT)
-    key = CharField(pk=True, generated=False, max_length=50)
     regenerating = BooleanField(default=False)
-    uses_left = SmallIntField()
+    uses_left = SmallIntField(
+        default=1,
+        description=(
+            "Number of times this same license can be used (useful example for giveaways)."
+            "Value of 0 marks this license as deactivated and it cannot be redeemed again."
+        )
+    )
 
     class Meta:
         table = "licenses"
 
     async def _post_delete(self, *args, **kwargs) -> None:
         """Deals with deleting ReminderActivations table after this table is deleted."""
-        await super()._post_delete(*args, *kwargs)
+        await super()._post_delete(*args, **kwargs)
         await self.reminder_activations.delete()
+
+    async def _pre_save(self, *args, **kwargs) -> None:
+        if self.uses_left < 0:
+            raise FieldError("License number of uses cannot be negative.")
+        elif self.regenerating and self.uses_left > 1:
+            raise FieldError("License cannot be regenerating and have multiple-uses at the same time!")
+
+        if self.regenerating and self.uses_left == 0:
+            """Deals with regenerating licenses by creating a new licenses that has the same data as this one.
+
+            Creates new license column with new key and marks it ready for activation (uses_left=1)
+            Also copies reminder_activations data from previous license and creates new  reminder_activations table
+            with that data since it is OneToOneField.
+            """
+            guild = await self.guild
+            reminder_activations = await self.reminder_activations
+
+            new_key = LicenseFormatter.generate_single(guild.custom_license_format, guild.license_branding)
+            new_reminder_activations = await reminder_activations.clone()
+
+            new_license = await self.clone(pk=new_key)
+            new_license.reminder_activations = new_reminder_activations
+            await new_license.save()
+
+        await super()._pre_save(*args, **kwargs)
 
 
 class LicensedMember(Model):
@@ -260,6 +317,10 @@ class ReminderActivations(Model):
     @classmethod
     async def default(cls) -> "ReminderActivations":
         return await cls.create(first_activation=720)
+
+    async def _pre_save(self, *args, **kwargs) -> None:
+        self._check_valid_activations()
+        await self._pre_save(*args, **kwargs)
 
     def _check_valid_activations(self):
         if not (
