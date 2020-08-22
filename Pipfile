@@ -29,4 +29,5 @@ python_version = "3.8"
 start = 'python -m bot'
 lint = "python -m flake8"
 secure = "python -m bandit -r bot"
+test = "python -m unittest discover"
 precommit = "pre-commit install"
