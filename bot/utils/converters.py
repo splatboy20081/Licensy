@@ -2,6 +2,8 @@ import re
 
 from discord.ext.commands import BadArgument, Context, Converter
 
+from bot import models
+
 
 class Duration(Converter):
     """
@@ -139,3 +141,66 @@ class PositiveInteger(Converter):
             raise BadArgument(f"Passed integer **{positive_integer}** must be larger than 0.")
         else:
             return positive_integer
+
+
+class RolePacket(Converter):
+    async def convert(self, ctx: Context, argument: str) -> models.RolePacket:
+        """
+        Converts argument to role packet.
+
+        Parameters
+        ----------
+        ctx: discord.ext.commands.Context
+            Context for converter.
+        argument: str
+            Argument that we will try to convert to role packet.
+
+        Raises
+        ------
+        discord.ext.commands.BadArgument
+            If there is no role packet with such name.
+
+        Returns
+        -------
+        role_packet : RolePacket
+            Instance of role packet.
+        """
+        if not ctx.guild:
+            raise BadArgument("Can't be used in DMs.")
+
+        role_packet = await models.RolePacket.get_or_none(guild_id=ctx.guild.id, name=argument)
+        if not role_packet:
+            raise BadArgument("Role packet not found.")
+
+        return role_packet
+
+
+class ReminderActivations(Converter):
+    async def convert(self, ctx: Context, activations) -> models.ReminderActivations:
+        """
+        Converts argument to role packet.
+
+        Parameters
+        ----------
+        ctx: discord.ext.commands.Context
+            Context for converter.
+        activations: List[int]
+            Argument that we will try to convert to role packet.
+
+        Raises
+        ------
+        discord.ext.commands.BadArgument
+            If there is no role packet with such name.
+
+        Returns
+        -------
+        reminder_activations : ReminderActivations
+            Instance of reminder activations.
+        """
+        if len(activations) > 5:
+            raise BadArgument("Maximum of 5 reminders possible.")
+
+        try:
+            return await models.ReminderActivations.create_easy(*activations)
+        except Exception as e:
+            raise BadArgument(e)
