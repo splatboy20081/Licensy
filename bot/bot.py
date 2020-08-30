@@ -36,7 +36,7 @@ class Licensy(commands.Bot):
             loop=loop,
             command_prefix=Licensy.prefix_callable,
             case_insensitive=True,
-            description=self.config.BOT_DESCRIPTION,
+            description=self.config.DESCRIPTION,
             owner_ids=set(self.config.BOT_OWNERS.values())
         )
 
@@ -83,7 +83,7 @@ class Licensy(commands.Bot):
 
     def reload_config(self):
         importlib.reload(config)
-        self.description = config.BOT_DESCRIPTION
+        self.description = config.DESCRIPTION
         logger.info("Config successfully reloaded.")
 
     async def _populate_prefix_cache(self) -> None:
@@ -301,7 +301,7 @@ class Licensy(commands.Bot):
         if not self.is_ready() or self.is_closed():
             return
 
-        error_log_channel = self.get_channel(self.config.DEVELOPER_LOG_CHANNEL_ID)
+        error_log_channel = self.get_channel(self.config.LOG_CHANNEL_ID)
         if error_log_channel is None:
             logger.critical("Can't send to error log channel as error log channel can't be found!")
             return

@@ -60,12 +60,23 @@ SUGGESTIONS_CHANNEL_ID: Final = 621366699316215828
 
 
 """
-Constants used to differentiate normal from premium users.
+Constants used to differentiate normal from premium guilds.
+
+NOTE!
+If you're changing these after you already have a database up and running note that
+you might lock your users from using the commands. For example if your previous
+NORMAL_UNUSED_LICENSE_COUNT was 1000 and there is a guild that already hit this limit
+but you decrease it here to 500 then that guild will not be able to create new licenses
+until it deletes 501 of them. Increasing counts is safe though.
 
 NORMAL_CHECK, PREMIUM_CHECK: int, int
-    Each how many minutes to check for license expiration.
-NORMAL_PACKET_COUNT, PREMIUM_PACKET_COUNT: int, int
+    Each how many minutes to check for license expiration. Only put ints and don't put < 1
+NORMAL_PACKET_ROLES_COUNT, PREMIUM_PACKET_ROLES_COUNT: int, int
     Maximum number of roles in role packet.
+NORMAL_PACKET_COUNT, PREMIUM_PACKET_COUNT: int, int
+    Maximum number of role packets in guild.
+NORMAL_ACTIVE_LICENSE_COUNT, PREMIUM_ACTIVE_LICENSE_COUNT: int, int
+    Maximum number of active licenses in guild.
 NORMAL_UNUSED_LICENSE_COUNT, PREMIUM_UNUSED_LICENSE_COUNT: int, int
     Maximum number of stored, unactivated licenses in guild.
 NORMAL_MAX_LICENSE_DURATION, PREMIUM_MAX_LICENSE_DURATION: int, int
@@ -73,9 +84,19 @@ NORMAL_MAX_LICENSE_DURATION, PREMIUM_MAX_LICENSE_DURATION: int, int
 """
 NORMAL_CHECK: Final = 60
 PREMIUM_CHECK: Final = 1
-NORMAL_PACKET_COUNT: Final = 3
-PREMIUM_PACKET_COUNT: Final = 10
-NORMAL_UNUSED_LICENSE_COUNT: Final = 100
-PREMIUM_UNUSED_LICENSE_COUNT: Final = 1_000
-NORMAL_MAX_LICENSE_DURATION: Final = 366 * 24 * 60
-PREMIUM_MAX_LICENSE_DURATION: Final = 3 * 366 * 24 * 60
+
+NORMAL_PACKET_ROLES_COUNT: Final = 5
+PREMIUM_PACKET_ROLES_COUNT: Final = 20
+
+NORMAL_PACKET_COUNT: Final = 10
+PREMIUM_PACKET_COUNT: Final = 100
+
+NORMAL_ACTIVE_LICENSE_COUNT = 1_000
+PREMIUM_ACTIVE_LICENSE_COUNT = 100_000
+
+NORMAL_UNUSED_LICENSE_COUNT: Final = 1_000
+PREMIUM_UNUSED_LICENSE_COUNT: Final = 10_000
+
+_minutes_in_year = 366 * 24 * 60
+NORMAL_MAX_LICENSE_DURATION: Final = _minutes_in_year
+PREMIUM_MAX_LICENSE_DURATION: Final = _minutes_in_year * 3

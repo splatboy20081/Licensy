@@ -245,7 +245,7 @@ class BotInformation(commands.Cog):
 
         fields = {"Last boot": self.last_boot(),
                   "Developer": self.bot.owner_mention,
-                  "Library": "discord.py",
+                  "Library": f"discord.py {discord.__version__}",
                   "Servers": len(self.bot.guilds),
                   "Average users:": f"{avg_users} users/server",
                   "Total users": len(self.bot.users),
