@@ -11,15 +11,25 @@ initializer(['bot.models.models'], db_url="sqlite://test-{}.sqlite")
 
 
 class TestModels(test.TestCase):
-    async def test_guild_create(self):
+    async def test_guild_unique(self):
         await models.Guild.create(id=123)
-        await models.Guild.create(id=456)
 
+        # Guild IDs are unique
         with self.assertRaises(exceptions.IntegrityError):
             await models.Guild.create(id=123)
 
+    async def test_license_key_unique(self):
+        guild_1 = await models.Guild.create(id=123)
+        guild_2 = await models.Guild.create(id=456)
+
+        await models.License.create(key="A"*20, guild=guild_1, reminder_activations=guild_1.reminder_activations)
+
+        # Licenses keys are unique, no matter the guild
+        with self.assertRaises(exceptions.IntegrityError):
+            await models.License.create(key="A" * 20, guild=guild_2, reminder_activations=guild_2.reminder_activations)
+
     async def test_guild_prefix(self):
-        """Guild prefix can be any string as long as it's within length limit."""
+        # Guild prefix can be any string as long as it's within length limit.
         valid_prefix = ("", "test", "123", "?*+", "owo_prefix")
         invalid_prefix = ("long_prefix", "very_long_prefix")
         guild = await models.Guild.create(id=123)
@@ -54,6 +64,7 @@ class TestModels(test.TestCase):
                 await guild.save()
 
     async def test_guild_branding(self):
+        # Everything is valid as long as it's within length limit.
         valid_branding = ("", "1234567890", "?*/*-+!#$%$&/(", "blabla", "t"*50)
         invalid_branding = ("t"*51, )
         guild = await models.Guild.create(id=123)
@@ -69,6 +80,7 @@ class TestModels(test.TestCase):
 
     async def test_guild_timezone(self):
         valid_timezone = range(-12, 15)
+        # Technically some of timezones can have decimal place but we don't allow those.
         invalid_timezone = (-100, -14, -13, -9.5, -9.3, 3.3, 15, 16, 100)
         guild = await models.Guild.create(id=123)
 
@@ -100,36 +112,36 @@ class TestModels(test.TestCase):
                 await guild.save()
 
     async def test_guild_reminders_creation(self):
-        # ReminderActivations table should be auto-created with new guild with default value.
+        # ReminderActivations table should be auto-created when creating new guild.
         self.assertEqual(0, await models.ReminderActivations.all().count())
         guild1 = await models.Guild.create(id=123)
         self.assertEqual(1, await models.ReminderActivations.all().count())
         guild2 = await models.Guild.create(id=456)
         self.assertEqual(2, await models.ReminderActivations.all().count())
 
-        # Default values should be the same, access to attributes should work.
+        # Default values of auto-created ReminderActivations tables should be the same since we didn't specify specific
+        # values, access to attributes should work.
         self.assertEqual(guild1.reminder_activations.first_activation, guild2.reminder_activations.first_activation)
-        # Need to create new unique table for each guild
-        self.assertNotEqual(guild1.reminder_activations.id, guild2.reminder_activations.id)
 
-    async def test_guild_reminders_access(self):
-        guild_id = 123
-        await models.Guild.create(id=guild_id)
-        guild_reminders = await models.ReminderActivations.get(guild__id=guild_id)
-        # default first activation in model is 720 (minutes)
-        self.assertEqual(guild_reminders.first_activation, 720)
+        # If we manually specify ReminderActivations table it should not auto create
+        reminder_activations_3 = await models.ReminderActivations.create(second_activation=60)
+        guild3 = await models.Guild.create(id=789, reminder_activations=reminder_activations_3)
+        self.assertEqual(3, await models.ReminderActivations.all().count())
+
+        # Created ReminderActivations tables should be unique for each guild
+        self.assertNotEqual(guild1.reminder_activations.id, guild2.reminder_activations.id)
+        self.assertNotEqual(guild2.reminder_activations.id, guild3.reminder_activations.id)
 
     async def test_model_copy(self):
         # This test will fail because tortoise copy is either broken or I'm not using it as I'm supposed to?
-        guild_id = 123
-        await models.Guild.create(id=guild_id)
+        await models.Guild.create(id=123)
         guild_reminders = await models.ReminderActivations.get(id=1)
         clone = guild_reminders.clone()
         await clone.save()  # fails ...
 
         self.assertEqual(2, await models.ReminderActivations.all().count())
 
-    async def test_role(self):
+    async def test_roles_unique(self):
         guild1 = await models.Guild.create(id=123)
         guild2 = await models.Guild.create(id=456)
 
@@ -140,7 +152,7 @@ class TestModels(test.TestCase):
         await models.Role.create(id=22, guild=guild2)
         await models.Role.create(id=23, guild=guild2)
 
-        # Role IDs should be unique
+        # Role IDs should be unique, no matter the guild
         with self.assertRaises(exceptions.IntegrityError):
             await models.Role.create(id=11, guild=guild1)
         with self.assertRaises(exceptions.IntegrityError):
@@ -274,7 +286,7 @@ class TestModels(test.TestCase):
         role_packet = await models.RolePacket.create(guild=guild, name="packet1", default_role_duration=360)
 
         valid_keys = ("quite_long_key", "very__long"*5)
-        invalid_keys = ("", "very_short", "quite___short", "too___long"*5 + "!")
+        invalid_keys = ("", "very_short", "quite___short")
 
         for valid in valid_keys:
             await models.License.create(key=valid, guild=guild, role_packet=role_packet)
@@ -287,8 +299,9 @@ class TestModels(test.TestCase):
         with self.assertRaises(exceptions.FieldError):
             await models.License.create(key="12345"*4, guild=guild, role_packet=role_packet, uses_left=-1)
 
-        # To big uses?
-        await models.License.create(key="12345" * 4, guild=guild, role_packet=role_packet, uses_left=9999999999)
+        # Too big uses left
+        with self.assertRaises(exceptions.FieldError):
+            await models.License.create(key="67890" * 4, guild=guild, role_packet=role_packet, uses_left=1_000_001)
 
     @classmethod
     def tearDownClass(cls):

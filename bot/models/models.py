@@ -119,7 +119,7 @@ class Guild(Model):
     timezone = SmallIntField(
         default=0,
         description=(
-            "Timezone offset from UTC+0 (which is default bot timezone)."
+            "Timezone integer offset from UTC+0 (which is default bot timezone)."
             "For internal calculations the default bot timezone is always used,"
             "this is only used for **displaying** expiration date for guild."
         )
@@ -359,6 +359,7 @@ class PacketRole(Model):
 
 class License(Model):
     KEY_MIN_LENGTH = 14
+    MAXIMUM_USES_LEFT = 1_000_000
 
     key = CharField(pk=True, generated=False, max_length=50)
     guild: ForeignKeyRelation[Guild] = ForeignKeyField("models.Guild", on_delete=CASCADE)
@@ -406,6 +407,8 @@ class License(Model):
             raise FieldError(f"License key has to be longer than {self.KEY_MIN_LENGTH} characters.")
         elif self.uses_left < 0:
             raise FieldError("License number of uses cannot be negative.")
+        elif self.uses_left > self.MAXIMUM_USES_LEFT:
+            raise FieldError("License number of uses is too big.")
         elif self.regenerating and self.uses_left > 1:
             raise FieldError("License cannot be regenerating and have multiple-uses at the same time!")
 
