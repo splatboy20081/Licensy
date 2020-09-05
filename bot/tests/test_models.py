@@ -81,28 +81,6 @@ class TestModels(test.TestCase):
             with self.assertRaises(exceptions.FieldError):
                 await guild.save()
 
-    async def test_guild_bool_fields(self):
-        """Just switches bool fields from True to False"""
-        guild = await models.Guild.create(id=123)
-
-        guild.enable_dm_redeem = True
-        guild.preserve_previous_duration = True
-        guild.reminders_enabled = True
-        guild.reminders_ping_in_reminders_channel = True
-        guild.reminders_send_to_dm = True
-        guild.license_log_channel_enabled = True
-        guild.bot_diagnostics_channel_enabled = True
-        await guild.save()
-
-        guild.enable_dm_redeem = False
-        guild.preserve_previous_duration = False
-        guild.reminders_enabled = False
-        guild.reminders_ping_in_reminders_channel = False
-        guild.reminders_send_to_dm = False
-        guild.license_log_channel_enabled = False
-        guild.bot_diagnostics_channel_enabled = False
-        await guild.save()
-
     async def test_guild_language(self):
         invalid_languages = (
             "",  # cannot be emtpy

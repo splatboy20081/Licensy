@@ -165,7 +165,6 @@ class Guild(Model):
             "Note: This does not affect message sending to reminder channel."
         )
     )
-    license_log_channel_enabled = BooleanField(default=False, description="Whether license logging is enabled or not.")
     license_log_channel_id = BigIntField(
         default=0,
         description=(
@@ -174,8 +173,7 @@ class Guild(Model):
             "Value of 0 (or any invalid ID) will disable sending messages."
             )
         )
-    bot_diagnostics_channel_enabled = BooleanField(default=False, description="Whether bot logging is enabled or not.")
-    bot_diagnostics_channel_id = BigIntField(
+    diagnostic_channel_id = BigIntField(
         default=0,
         description=(
             "Guild channel where bot diagnostic messages will be sent."
