@@ -1,6 +1,7 @@
 from typing import Tuple
 
 from tortoise.models import Model
+from tortoise.query_utils import Q
 from tortoise.queryset import QuerySet
 from tortoise.exceptions import FieldError, IntegrityError
 from tortoise.fields import (
@@ -12,7 +13,6 @@ from bot.utils import i18n_handler
 from bot.utils.licence_helper import LicenseFormatter
 
 
-# TODO add either database level or code level checks for fields.
 # TODO periodic check for cleaning data, example if LicensedMember has no more LicensedRoles then remove
 # TODO DURATION?
 
@@ -63,7 +63,8 @@ class ReminderActivations(Model):
 
     def _check_valid_first_activation(self):
         """This table, if it exists, should have at least one proper activation."""
-        return self.get_all_activations()[0] > 0
+        if not self[0] > 0:
+            raise FieldError("Reminder first activation has to be enabled.")
 
     def _check_activation_ranges(self):
         for activation in self.get_all_activations():
@@ -79,14 +80,12 @@ class ReminderActivations(Model):
 
         Every next activation has to be smaller than the previous (smaller == later reminder).
         """
-        # Ignore activations that are set to 0 as those are considered disabled,
-        # also because our check would fail (0 == 0 and 0 < 0)
-        positive_activations = tuple(activation for activation in self.get_all_activations() if activation > 0)
-        for activation_pair in zip(positive_activations, positive_activations[1:]):
-            if activation_pair[0] == activation_pair[1]:
-                raise FieldError("Reminder activation fields can't have duplicate values.")
-            elif activation_pair[0] < activation_pair[1]:
-                raise FieldError("Reminder activation fields have to be ordered from highest to lowest.")
+        activations = self.get_all_activations()
+        for activation_pair in zip(activations, activations[1:]):
+            if activation_pair[0] < activation_pair[1]:
+                raise FieldError(
+                    "Reminder activation fields have to be ordered from highest to lowest without duplicate values."
+                )
 
     class Meta:
         table = "reminders_settings"
@@ -191,11 +190,18 @@ class Guild(Model):
     async def _post_delete(self, *args, **kwargs) -> None:
         """Deals with deleting ReminderActivations table after this table is deleted."""
         await super()._post_delete(*args, **kwargs)
-        await self.reminder_activations.delete()  # TODO test this
+        await self.reminder_activations.delete()
 
     async def _pre_save(self, *args, **kwargs) -> None:
-        if (max_prefix_length := self._meta.fields_map['custom_prefix'].max_length) < len(self.custom_prefix):
-            raise FieldError(f"Custom prefix has to be under {max_prefix_length} characters.")
+        custom_prefix_maximum_length = self._meta.fields_map['custom_prefix'].max_length
+        custom_license_format_maximum_length = self._meta.fields_map['custom_license_format'].max_length
+        license_branding_maximum_length = self._meta.fields_map['license_branding'].max_length
+        language_maximum_length = self._meta.fields_map['language'].max_length
+
+        if len(self.custom_prefix) > custom_prefix_maximum_length:
+            raise FieldError(f"Custom prefix has to be under {custom_prefix_maximum_length} characters.")
+        elif len(self.custom_license_format) > custom_license_format_maximum_length:
+            raise FieldError(f"Custom format has to be under {custom_license_format_maximum_length} characters.")
         elif self.custom_license_format and not LicenseFormatter.is_secure(self.custom_license_format):
             generated_permutations = LicenseFormatter.get_format_permutations(self.custom_license_format)
             raise FieldError(
@@ -203,18 +209,17 @@ class Guild(Model):
                 f"Not enough possible permutations!"
                 f"Required: {LicenseFormatter.min_permutation_count}, got: {generated_permutations}"
             )
-        elif (max_brand_length := self._meta.fields_map['license_branding'].max_length) < len(self.license_branding):
-            raise FieldError(f"License branding has to be under {max_brand_length} characters.")
+        elif len(self.license_branding) > license_branding_maximum_length:
+            raise FieldError(f"License branding has to be under {license_branding_maximum_length} characters.")
         elif self.timezone not in range(-12, 15):
             raise FieldError("Invalid timezone.")
-        elif self.language not in i18n_handler.LANGUAGES:
+        elif self.language not in i18n_handler.LANGUAGES or len(self.language) > language_maximum_length:
             raise FieldError("Unsupported guild language.")
 
         await super()._pre_save(*args, **kwargs)
 
     @classmethod
     async def create(cls, **kwargs) -> Model:
-        # TODO test if not passing and passing one works
         reminder_activations = kwargs.pop("reminder_activations", None)
         if not reminder_activations:
             reminder_activations = await ReminderActivations.create()
@@ -223,6 +228,7 @@ class Guild(Model):
 
 
 class AuthorizedRole(Model):
+    # TODO this is a placeholder for future functionality
     role_id = BigIntField()
     guild: ForeignKeyRelation[Guild] = ForeignKeyField("models.Guild", on_delete=CASCADE)
     authorization_level = SmallIntField(
@@ -272,8 +278,17 @@ class Role(Model):
         elif not (0 <= self.tier_power <= 9):
             raise FieldError("Role tier power has to be in 0-9 range.")
         elif self.tier_level != 0:  # If it's not disabled
-            # TODO test if QuerySet error since guild might not be loaded
-            if await Role.get(guild=self.guild, tier_level=self.tier_level, tier_power=self.tier_power).exists():
+            # Since we're accessing foreign attributes that might not yet be
+            # loaded (QuerySet) we should load them just in case.
+            if isinstance(self.guild, QuerySet):
+                self.guild = await self.guild.first()
+
+            if await Role.get(
+                    ~Q(id=self.id),  # so it doesn't find itself and says 'hey it's a duplicate'
+                    guild=self.guild,
+                    tier_level=self.tier_level,
+                    tier_power=self.tier_power
+            ).exists():
                 raise IntegrityError("Can't have 2 roles with same tier level/power!")
 
         await super()._pre_save(*args, **kwargs)
@@ -297,6 +312,8 @@ class RolePacket(Model):
     async def _pre_save(self, *args, **kwargs) -> None:
         if (max_name_length := self._meta.fields_map['name'].max_length) < len(self.name):
             raise FieldError(f"Packet name has to be under {max_name_length} characters.")
+        elif not self.name:
+            raise FieldError("Packet name cannot be empty.")
         elif self.default_role_duration < 0:
             raise FieldError("Role packet default role duration cannot be negative.")
 
@@ -337,12 +354,12 @@ class PacketRole(Model):
         # +1 since this is pre_save so it won't count this current one
         elif await self.role_packet.packet_roles.all().count() + 1 > RolePacket.MAXIMUM_ROLES:
             raise IntegrityError(
-                f"Cannot add packet role to `{self.role_packet.name}` as number of "  # TODO maybe need to await?
-                f"roles in packet would exceed limit of {RolePacket.MAXIMUM_ROLES} roles."
+                "Cannot add packet role as number of roles in packet "
+                f"would exceed limit of {RolePacket.MAXIMUM_ROLES} roles."
             )
 
-        # Since we're accessing foreign attributes that might not yet be loaded (QuerySet)
-        # we should load them just in case.
+        # Since we're accessing foreign attributes that might not yet
+        # be loaded (QuerySet) we should load them just in case.
         role_guild = self.role.guild
         role_packet_guild = self.role_packet.guild
 
@@ -368,7 +385,7 @@ class License(Model):
     # only used if it's regenerating? I can make licensed members right at creation
     role_packet: ForeignKeyRelation[RolePacket] = ForeignKeyField(
         "models.RolePacket",
-        on_delete=SET_NULL,
+        on_delete=SET_NULL,  # TODO ADD THIS TO TESTS
         null=True,
         description=(
             "[optional] Only used if the license is regenerating. so we know"
@@ -392,14 +409,14 @@ class License(Model):
     @classmethod
     async def create(cls, **kwargs) -> Model:
         # If not specified during the creation then use the reminder_activations from guild.reminder_activations
-        reminder_activations = kwargs.pop("reminder_activations", None)
+        reminder_activations = kwargs.pop("reminder_activations", None)  # TODO TEST
         if not reminder_activations:
             reminder_activations = await ReminderActivations.create()
         return await super().create(reminder_activations=reminder_activations, **kwargs)
 
     async def _post_delete(self, *args, **kwargs) -> None:
         """Deals with deleting ReminderActivations table after this table is deleted."""
-        await super()._post_delete(*args, **kwargs)
+        await super()._post_delete(*args, **kwargs)  # TODO TEST THIS
         await self.reminder_activations.delete()
 
     async def _pre_save(self, *args, **kwargs) -> None:
