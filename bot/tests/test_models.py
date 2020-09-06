@@ -28,6 +28,26 @@ class TestModels(test.TestCase):
         with self.assertRaises(exceptions.IntegrityError):
             await models.License.create(key="A" * 20, guild=guild_2, reminder_activations=guild_2.reminder_activations)
 
+    async def test_roles_unique(self):
+        guild1 = await models.Guild.create(id=123)
+        guild2 = await models.Guild.create(id=456)
+
+        # Create some roles
+        await models.Role.create(id=11, guild=guild1)
+        await models.Role.create(id=12, guild=guild1)
+        await models.Role.create(id=21, guild=guild2)
+        await models.Role.create(id=22, guild=guild2)
+        await models.Role.create(id=23, guild=guild2)
+
+        # Role IDs should be unique, no matter the guild
+        with self.assertRaises(exceptions.IntegrityError):
+            await models.Role.create(id=11, guild=guild1)
+        with self.assertRaises(exceptions.IntegrityError):
+            await models.Role.create(id=11, guild=guild2)
+
+        self.assertEqual(2, await guild1.roles.all().count())
+        self.assertEqual(3, await guild2.roles.all().count())
+
     async def test_guild_prefix(self):
         # Guild prefix can be any string as long as it's within length limit.
         valid_prefix = ("", "test", "123", "?*+", "owo_prefix")
@@ -137,31 +157,11 @@ class TestModels(test.TestCase):
         await models.Guild.create(id=123)
         guild_reminders = await models.ReminderActivations.get(id=1)
         clone = guild_reminders.clone()
-        await clone.save()  # fails ...
+        await clone.save()  # fails ... guessing I need to manually get next auto-generating ID
 
         self.assertEqual(2, await models.ReminderActivations.all().count())
 
-    async def test_roles_unique(self):
-        guild1 = await models.Guild.create(id=123)
-        guild2 = await models.Guild.create(id=456)
-
-        # Create some roles
-        await models.Role.create(id=11, guild=guild1)
-        await models.Role.create(id=12, guild=guild1)
-        await models.Role.create(id=21, guild=guild2)
-        await models.Role.create(id=22, guild=guild2)
-        await models.Role.create(id=23, guild=guild2)
-
-        # Role IDs should be unique, no matter the guild
-        with self.assertRaises(exceptions.IntegrityError):
-            await models.Role.create(id=11, guild=guild1)
-        with self.assertRaises(exceptions.IntegrityError):
-            await models.Role.create(id=11, guild=guild2)
-
-        self.assertEqual(2, await guild1.roles.all().count())
-        self.assertEqual(3, await guild2.roles.all().count())
-
-    async def test_role_packet(self):
+    async def test_role_packet_unique_name(self):
         guild1 = await models.Guild.create(id=123)
         guild2 = await models.Guild.create(id=456)
 
@@ -170,24 +170,51 @@ class TestModels(test.TestCase):
         await models.RolePacket.create(guild=guild1, name="packet12", default_role_duration=360)
         await models.RolePacket.create(guild=guild2, name="packet22", default_role_duration=0)
 
-        self.assertEqual(2, await guild1.packets.all().count())
-        self.assertEqual(1, await guild2.packets.all().count())
-
         # Packet names should be unique per guild
         await models.RolePacket.create(guild=guild2, name="packet11", default_role_duration=720)
         with self.assertRaises(exceptions.IntegrityError):
             await models.RolePacket.create(guild=guild1, name="packet11", default_role_duration=720)
         with self.assertRaises(exceptions.IntegrityError):
-            await models.RolePacket.create(guild=guild1, name="packet11", default_role_duration=720)
+            await models.RolePacket.create(guild=guild2, name="packet11", default_role_duration=720)
+
+    async def test_role_packet_default_role_duration(self):
+        guild1 = await models.Guild.create(id=123)
 
         # Cannot have negative default role duration
         with self.assertRaises(exceptions.FieldError):
             await models.RolePacket.create(guild=guild1, name="negative", default_role_duration=-1)
 
-        self.assertEqual(2, await guild1.packets.all().count())
-        self.assertEqual(2, await guild2.packets.all().count())
-
     async def test_packet_role(self):
+        guild1 = await models.Guild.create(id=123)
+        guild2 = await models.Guild.create(id=456)
+
+        # Create some roles
+        role11 = await models.Role.create(id=11, guild=guild1)
+        role21 = await models.Role.create(id=21, guild=guild2)
+        role22 = await models.Role.create(id=22, guild=guild2)
+
+        # Create some role packets
+        role_packet_1 = await models.RolePacket.create(guild=guild1, name="packet1", default_role_duration=360)
+        role_packet_2 = await models.RolePacket.create(guild=guild2, name="packet2", default_role_duration=720)
+
+        # Add roles to role packet
+        await models.PacketRole.create(role=role11, role_packet=role_packet_1)
+        await models.PacketRole.create(role=role21, role_packet=role_packet_2)
+        await models.PacketRole.create(role=role22, role_packet=role_packet_2)
+
+        # Cannot have 2 of the same roles in the packet.
+        with self.assertRaises(exceptions.IntegrityError):
+            await models.PacketRole.create(role=role11, role_packet=role_packet_1)
+        with self.assertRaises(exceptions.IntegrityError):
+            await models.PacketRole.create(role=role21, role_packet=role_packet_2)
+
+        # Cannot add role from X guild to role packet that is from Y guild (guilds have to be the same).
+        with self.assertRaises(exceptions.IntegrityError):
+            await models.PacketRole.create(role=role11, role_packet=role_packet_2)
+        with self.assertRaises(exceptions.IntegrityError):
+            await models.PacketRole.create(role=role21, role_packet=role_packet_1)
+
+    async def test_packet_role_default_duration(self):
         guild1 = await models.Guild.create(id=123)
         guild2 = await models.Guild.create(id=456)
 
@@ -201,7 +228,7 @@ class TestModels(test.TestCase):
         role_packet_1 = await models.RolePacket.create(guild=guild1, name="packet1", default_role_duration=360)
         role_packet_2 = await models.RolePacket.create(guild=guild2, name="packet2", default_role_duration=720)
 
-        # Add roles to role packet
+        # Add roles to role packet without specifying duration
         packet_role_11 = await models.PacketRole.create(role=role11, role_packet=role_packet_1)
         packet_role_21 = await models.PacketRole.create(role=role21, role_packet=role_packet_2)
         packet_role_22 = await models.PacketRole.create(role=role22, role_packet=role_packet_2)
@@ -211,25 +238,18 @@ class TestModels(test.TestCase):
         self.assertEqual(role_packet_2.default_role_duration, packet_role_21.duration)
         self.assertEqual(role_packet_2.default_role_duration, packet_role_22.duration)
 
-        # Packet role duration cannot be negative
-        with self.assertRaises(exceptions.FieldError):
-            await models.PacketRole.create(role=role23, role_packet=role_packet_2, duration=-1)
-
         # If duration is specified during the creation of packet role it should use that duration
         packet_role_23 = await models.PacketRole.create(role=role23, role_packet=role_packet_2, duration=999)
         self.assertEqual(999, packet_role_23.duration)
 
-        # Cannot have 2 of the same roles in the packet.
-        with self.assertRaises(exceptions.IntegrityError):
-            await models.PacketRole.create(role=role11, role_packet=role_packet_1)
-        with self.assertRaises(exceptions.IntegrityError):
-            await models.PacketRole.create(role=role21, role_packet=role_packet_2)
+    async def test_packet_role_duration(self):
+        guild = await models.Guild.create(id=123)
+        role = await models.Role.create(id=1, guild=guild)
+        role_packet = await models.RolePacket.create(guild=guild, name="packet1", default_role_duration=360)
 
-        # Cannot add role from X guild to role packet that is from Y guild (guilds have to be the same).
-        with self.assertRaises(exceptions.IntegrityError):
-            await models.PacketRole.create(role=role11, role_packet=role_packet_2)
-        with self.assertRaises(exceptions.IntegrityError):
-            await models.PacketRole.create(role=role21, role_packet=role_packet_1)
+        # Packet role duration cannot be negative
+        with self.assertRaises(exceptions.FieldError):
+            await models.PacketRole.create(role=role, role_packet=role_packet, duration=-1)
 
     async def test_packet_role_maximum_roles(self):
         guild1 = await models.Guild.create(id=123)
@@ -281,7 +301,7 @@ class TestModels(test.TestCase):
         self.assertEqual(packet_roles[0], packet_role_1)
         self.assertEqual(packet_roles[1], packet_role_2)
 
-    async def test_license(self):
+    async def test_license_key(self):
         guild = await models.Guild.create(id=123)
         role_packet = await models.RolePacket.create(guild=guild, name="packet1", default_role_duration=360)
 
@@ -294,6 +314,10 @@ class TestModels(test.TestCase):
         for invalid in invalid_keys:
             with self.assertRaises(exceptions.FieldError):
                 await models.License.create(key=invalid, guild=guild, role_packet=role_packet)
+
+    async def test_license_uses(self):
+        guild = await models.Guild.create(id=123)
+        role_packet = await models.RolePacket.create(guild=guild, name="packet1", default_role_duration=360)
 
         # Invalid uses left
         with self.assertRaises(exceptions.FieldError):
